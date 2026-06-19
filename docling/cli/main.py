@@ -315,6 +315,7 @@ def export_documents(
     print_timings: bool,
     export_timings: bool,
     image_export_mode: ImageRefMode,
+    formula_as_embedded_image: bool = False,
 ):
     success_count = 0
     failure_count = 0
@@ -388,9 +389,26 @@ def export_documents(
             if export_md:
                 fname = output_dir / f"{doc_filename}.md"
                 _log.info(f"writing Markdown output to {fname}")
-                conv_res.document.save_as_markdown(
-                    filename=fname, image_mode=image_export_mode
-                )
+                if formula_as_embedded_image:
+                    from docling_core.transforms.serializer.markdown import (
+                        MarkdownDocSerializer,
+                        MarkdownParams,
+                    )
+
+                    from docling.utils.markdown_formula_serializer import (
+                        FormulaImageTextSerializer,
+                    )
+
+                    serializer = MarkdownDocSerializer(
+                        doc=conv_res.document,
+                        params=MarkdownParams(image_mode=image_export_mode),
+                        text_serializer=FormulaImageTextSerializer(),
+                    )
+                    fname.write_text(serializer.serialize().text, encoding="utf-8")
+                else:
+                    conv_res.document.save_as_markdown(
+                        filename=fname, image_mode=image_export_mode
+                    )
                 if _is_empty_output(fname):
                     error_message = (
                         "Markdown export produced empty output for "
@@ -614,6 +632,13 @@ def convert(  # noqa: C901
     enrich_formula: Annotated[
         bool,
         typer.Option(..., help="Enable the formula enrichment model in the pipeline."),
+    ] = False,
+    formula_as_embedded_image: Annotated[
+        bool,
+        typer.Option(
+            ...,
+            help="Embed formula regions as inline base64 PNG images in Markdown output instead of LaTeX or the formula-not-decoded placeholder. Automatically enables page image generation.",
+        ),
     ] = False,
     enrich_picture_classes: Annotated[
         bool,
@@ -938,6 +963,9 @@ def convert(  # noqa: C901
                 pipeline_options.generate_picture_images = (
                     True  # FIXME: to be deprecated in version 3
                 )
+
+            if formula_as_embedded_image:
+                pipeline_options.generate_page_images = True
                 pipeline_options.images_scale = 2
             pdf_backend = normalize_pdf_backend(pdf_backend)
             backend: Type[PdfDocumentBackend]
@@ -1155,6 +1183,7 @@ def convert(  # noqa: C901
             print_timings=profiling,
             export_timings=save_profiling,
             image_export_mode=image_export_mode,
+            formula_as_embedded_image=formula_as_embedded_image,
         )
 
         end_time = time.time() - start_time
