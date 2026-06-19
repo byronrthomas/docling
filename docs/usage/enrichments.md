@@ -8,6 +8,7 @@ The following table provides an overview of the default enrichment models availa
 | ------- | --------- | ---------------| ----------- |
 | Code understanding | `do_code_enrichment` | `CodeItem` | See [docs below](#code-understanding). |
 | Formula understanding | `do_formula_enrichment` | `TextItem` with label `FORMULA` | See [docs below](#formula-understanding). |
+| Formula as embedded image | `--formula-as-embedded-image` (CLI) | `TextItem` with label `FORMULA` | See [docs below](#formula-as-embedded-image). |
 | Picture classification | `do_picture_classification` | `PictureItem` | See [docs below](#picture-classification). |
 | Picture description | `do_picture_description` | `PictureItem` | See [docs below](#picture-description). |
 
@@ -74,6 +75,58 @@ converter = DocumentConverter(format_options={
 
 result = converter.convert("https://arxiv.org/pdf/2501.17887")
 doc = result.document
+```
+
+### Formula as embedded image
+
+When formula enrichment is not run (or not desired), formulas would otherwise appear as
+`<!-- formula-not-decoded -->` in Markdown output. The `--formula-as-embedded-image` option
+is an alternative that crops the formula region from the rendered page image and embeds it
+as an inline base64 PNG — no model inference required.
+
+This option requires page images to be rendered during conversion, which it enables
+automatically. It can be combined with `--enrich-formula` if both a visual crop and a LaTeX
+fallback are wanted, though when the flag is set the image always takes precedence.
+
+Example command line:
+
+```sh
+docling convert --formula-as-embedded-image FILE
+```
+
+Example code:
+
+```py
+import base64
+from io import BytesIO
+from pathlib import Path
+
+from docling_core.transforms.serializer.markdown import MarkdownDocSerializer, MarkdownParams
+from docling_core.types.doc import ImageRefMode
+
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.datamodel.base_models import InputFormat
+from docling.utils.markdown_formula_serializer import FormulaImageTextSerializer
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.generate_page_images = True
+
+converter = DocumentConverter(format_options={
+    InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+})
+
+result = converter.convert("https://arxiv.org/pdf/2501.17887")
+doc = result.document
+
+# Export with formula regions rendered as embedded PNG images
+serializer = MarkdownDocSerializer(
+    doc=doc,
+    params=MarkdownParams(image_mode=ImageRefMode.PLACEHOLDER),
+    text_serializer=FormulaImageTextSerializer(),
+)
+markdown = serializer.serialize().text
+Path("output.md").write_text(markdown)
 ```
 
 ### Picture classification

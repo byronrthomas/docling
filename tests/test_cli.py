@@ -260,6 +260,87 @@ def test_cli_html_image_headers_require_remote_fetch(tmp_path):
     )
 
 
+def test_export_documents_formula_as_embedded_image(tmp_path):
+    from docling_core.types.doc import (
+        BoundingBox,
+        DocItemLabel,
+        DoclingDocument,
+        ImageRef,
+        ProvenanceItem,
+        Size,
+    )
+    from docling_core.types.doc.base import CoordOrigin
+    from PIL import Image
+
+    from docling.cli.main import export_documents
+    from docling.datamodel.base_models import ConversionStatus, InputFormat
+    from docling.datamodel.document import (
+        ConversionResult,
+        InputDocument,
+        _DummyBackend,
+    )
+
+    # Build a minimal DoclingDocument with one FormulaItem backed by a page image.
+    doc = DoclingDocument(name="test")
+    page_img = Image.new("RGB", (100, 100), color="white")
+    doc.add_page(
+        page_no=1,
+        size=Size(width=100, height=100),
+        image=ImageRef.from_pil(page_img, dpi=72),
+    )
+    doc.add_text(
+        label=DocItemLabel.FORMULA,
+        text="",
+        orig="E=mc^2",
+        prov=ProvenanceItem(
+            page_no=1,
+            # BOTTOMLEFT origin (PDF convention): t > b; covers most of the page.
+            # to_top_left_origin will convert to valid PIL crop coords (t < b).
+            bbox=BoundingBox(
+                l=10, t=90, r=90, b=10, coord_origin=CoordOrigin.BOTTOMLEFT
+            ),
+            charspan=(0, 0),
+        ),
+    )
+
+    input_path = tmp_path / "input.pdf"
+    input_path.write_bytes(b"%PDF-1.4")
+    input_doc = InputDocument(
+        path_or_stream=input_path,
+        format=InputFormat.PDF,
+        backend=_DummyBackend,
+    )
+    conv_res = ConversionResult(input=input_doc)
+    conv_res.status = ConversionStatus.SUCCESS
+    conv_res.document = doc
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+
+    export_documents(
+        [conv_res],
+        output_dir=output_dir,
+        export_json=False,
+        export_yaml=False,
+        export_html=False,
+        export_html_split_page=False,
+        show_layout=False,
+        export_md=True,
+        export_txt=False,
+        export_doctags=False,
+        export_vtt=False,
+        export_doclang=False,
+        print_timings=False,
+        export_timings=False,
+        image_export_mode=ImageRefMode.PLACEHOLDER,
+        formula_as_embedded_image=True,
+    )
+
+    md_content = (output_dir / "input.md").read_text()
+    assert "data:image/png;base64" in md_content
+    assert "formula-not-decoded" not in md_content
+
+
 def test_export_documents_marks_empty_markdown_as_failure(tmp_path):
     from docling.cli.main import export_documents
     from docling.datamodel.base_models import ConversionStatus, InputFormat
